@@ -1,0 +1,10 @@
+qwen-tts==0.1.1
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+soundfile>=0.13.0
+numpy>=2.0.0
+librosa>=0.11.0
+einops>=0.8.0
+onnxruntime>=1.18.0
+transformers==4.57.3
+accelerate>=1.12.0
