@@ -6,10 +6,10 @@ FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0"
 ENV PYTHONUNBUFFERED=1
 
-# System dependencies
+# System dependencies (matches c3-comfyui order for layer caching)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv \
-    sox libsox-fmt-all ffmpeg \
+    git sox libsox-fmt-all ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -22,13 +22,14 @@ RUN pip install --no-cache-dir --break-system-packages \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Pre-download models at build time
+# Pre-download models at build time (default: CustomVoice + Base)
+# Override with: --build-arg PRELOAD_MODELS=CustomVoice:1.7B,Base:1.7B,VoiceDesign:1.7B
+ARG PRELOAD_MODELS=CustomVoice:1.7B,Base:1.7B
 COPY download_models.py .
-RUN python3 download_models.py
+RUN PRELOAD_MODELS=${PRELOAD_MODELS} python3 download_models.py
 
 # Application code (no voice files — mount refs at runtime)
 COPY server.py .
-COPY README.md .
 
 EXPOSE 8000
 
