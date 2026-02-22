@@ -22,6 +22,7 @@ logger = logging.getLogger("qwen3-tts")
 # --- Config ---
 MODEL_BASE = os.environ.get("TTS_MODEL_BASE", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
 MODEL_CUSTOM = os.environ.get("TTS_MODEL_CUSTOM", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
+MODEL_DESIGN = os.environ.get("TTS_MODEL_DESIGN", "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign")
 MAX_SENTENCES_PER_CHUNK = int(os.environ.get("TTS_MAX_SENTENCES", "2"))
 INTER_CHUNK_PAUSE = float(os.environ.get("TTS_CHUNK_PAUSE", "0.3"))
 PORT = int(os.environ.get("PORT", "8000"))
@@ -56,7 +57,7 @@ def load_models():
     )
     logger.info(f"CustomVoice loaded in {time.time()-t0:.1f}s")
 
-    logger.info("Loading Base model (for voice cloning & design)...")
+    logger.info("Loading Base model (for voice cloning)...")
     t0 = time.time()
     models["base"] = Qwen3TTSModel.from_pretrained(
         MODEL_BASE,
@@ -64,6 +65,23 @@ def load_models():
         dtype=dtype,
     )
     logger.info(f"Base model loaded in {time.time()-t0:.1f}s")
+
+    # VoiceDesign — not baked into Docker image (saves ~4.5GB).
+    # from_pretrained auto-downloads from HF if not cached.
+    # On GPU instances this takes ~2-5s at 20gbit.
+    logger.info(f"Loading VoiceDesign model ({MODEL_DESIGN})...")
+    t0 = time.time()
+    try:
+        models["design"] = Qwen3TTSModel.from_pretrained(
+            MODEL_DESIGN,
+            device_map=device,
+            dtype=dtype,
+        )
+        logger.info(f"VoiceDesign loaded in {time.time()-t0:.1f}s")
+    except Exception as e:
+        logger.warning(f"VoiceDesign model not available, /v1/design disabled: {e}")
+        models["design"] = None
+
     models["_device"] = device
 
 
@@ -215,7 +233,9 @@ async def generate_voice_design(
     text: str, language: str, instruct: str
 ) -> tuple[np.ndarray, int]:
     """Generate speech using voice design (description-based), chunked by sentences."""
-    model = models["base"]
+    model = models.get("design")
+    if model is None:
+        raise RuntimeError("VoiceDesign model not loaded. Set TTS_MODEL_DESIGN or ensure model is available.")
     chunks = split_sentences(text, MAX_SENTENCES_PER_CHUNK)
     logger.info(f"Design: {len(chunks)} chunk(s) for {len(text)} chars")
 
