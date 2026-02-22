@@ -17,11 +17,11 @@ WORKDIR /app
 
 # Install PyTorch with CUDA 12.6
 RUN pip install --no-cache-dir --break-system-packages \
-    torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
+    torch==2.9.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu126
 
 # Install flash-attn (official prebuilt wheel from Dao-AILab)
 RUN pip install --no-cache-dir --break-system-packages \
-    https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
+    https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
 
 # Install TTS dependencies
 COPY requirements.txt .
