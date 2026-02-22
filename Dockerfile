@@ -31,7 +31,7 @@ WORKDIR /app
 
 # Install PyTorch with CUDA 12.8 (matches c3-comfyui for layer caching)
 RUN pip install --no-cache-dir --break-system-packages \
-    torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+    torch torchaudio --index-url https://download.pytorch.org/whl/cu124
 
 # Install TTS dependencies
 COPY requirements.txt .
