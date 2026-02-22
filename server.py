@@ -2,11 +2,12 @@
 import base64
 import io
 import os
+import subprocess
 import tempfile
 import time
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Literal
 from contextlib import asynccontextmanager
 
 import torch
@@ -105,6 +106,7 @@ class TTSRequest(BaseModel):
     language: str = "English"
     speaker: str = "Ryan"
     instruct: Optional[str] = None
+    response_format: str = "wav"
 
 
 class CloneRequest(BaseModel):
@@ -114,12 +116,14 @@ class CloneRequest(BaseModel):
     ref_audio_url: Optional[str] = None
     ref_audio_base64: Optional[str] = None
     x_vector_only: bool = True
+    response_format: str = "wav"
 
 
 class DesignRequest(BaseModel):
     text: str
     language: str = "English"
     instruct: str  # Voice description, e.g. "A deep male voice with a British accent"
+    response_format: str = "wav"
 
 
 class HealthResponse(BaseModel):
@@ -164,6 +168,41 @@ def wav_to_bytes(wav_data: np.ndarray, sample_rate: int) -> bytes:
     sf.write(buf, wav_data, sample_rate, format="WAV")
     buf.seek(0)
     return buf.read()
+
+
+# Supported output formats and their ffmpeg/media-type mappings
+_FORMAT_MAP = {
+    "wav": {"ext": "wav", "media_type": "audio/wav", "ffmpeg_args": None},
+    "mp3": {"ext": "mp3", "media_type": "audio/mpeg", "ffmpeg_args": ["-c:a", "libmp3lame", "-q:a", "2"]},
+    "opus": {"ext": "opus", "media_type": "audio/ogg", "ffmpeg_args": ["-c:a", "libopus", "-b:a", "64k"]},
+    "ogg": {"ext": "ogg", "media_type": "audio/ogg", "ffmpeg_args": ["-c:a", "libopus", "-b:a", "64k"]},
+    "flac": {"ext": "flac", "media_type": "audio/flac", "ffmpeg_args": ["-c:a", "flac"]},
+}
+
+
+def encode_audio(wav_bytes: bytes, fmt: str) -> tuple[bytes, str]:
+    """Convert WAV bytes to the requested format. Returns (audio_bytes, media_type)."""
+    fmt = fmt.lower()
+    if fmt not in _FORMAT_MAP:
+        raise ValueError(f"Unsupported format: {fmt}. Supported: {list(_FORMAT_MAP.keys())}")
+
+    info = _FORMAT_MAP[fmt]
+    if info["ffmpeg_args"] is None:
+        return wav_bytes, info["media_type"]
+
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-f", "wav", "-i", "pipe:0", *info["ffmpeg_args"], "-f", info["ext"], "pipe:1"],
+            input=wav_bytes, capture_output=True, timeout=30,
+        )
+        if proc.returncode != 0:
+            logger.error(f"ffmpeg failed: {proc.stderr.decode()[-500:]}")
+            # Fall back to WAV on conversion error
+            return wav_bytes, "audio/wav"
+        return proc.stdout, info["media_type"]
+    except Exception as e:
+        logger.error(f"Audio conversion error: {e}")
+        return wav_bytes, "audio/wav"
 
 
 def _make_pause(sr: int, dtype) -> np.ndarray:
@@ -290,12 +329,14 @@ async def tts(req: TTSRequest):
         logger.info(f"TTS: {duration:.1f}s audio in {gen_time:.1f}s ({gen_time/duration:.1f}x realtime)")
 
         wav_bytes = wav_to_bytes(audio, sr)
+        out_bytes, media_type = encode_audio(wav_bytes, req.response_format)
         return StreamingResponse(
-            io.BytesIO(wav_bytes),
-            media_type="audio/wav",
+            io.BytesIO(out_bytes),
+            media_type=media_type,
             headers={
                 "X-Audio-Duration": f"{duration:.2f}",
                 "X-Generation-Time": f"{gen_time:.2f}",
+                "X-Output-Format": req.response_format,
             },
         )
 
@@ -351,12 +392,14 @@ async def clone(req: CloneRequest):
             logger.info(f"Clone: {duration:.1f}s audio in {gen_time:.1f}s ({gen_time/duration:.1f}x realtime)")
 
             wav_bytes = wav_to_bytes(audio, sr)
+            out_bytes, media_type = encode_audio(wav_bytes, req.response_format)
             return StreamingResponse(
-                io.BytesIO(wav_bytes),
-                media_type="audio/wav",
+                io.BytesIO(out_bytes),
+                media_type=media_type,
                 headers={
                     "X-Audio-Duration": f"{duration:.2f}",
                     "X-Generation-Time": f"{gen_time:.2f}",
+                    "X-Output-Format": req.response_format,
                 },
             )
     finally:
@@ -386,12 +429,14 @@ async def design(req: DesignRequest):
         logger.info(f"Design: {duration:.1f}s audio in {gen_time:.1f}s ({gen_time/duration:.1f}x realtime)")
 
         wav_bytes = wav_to_bytes(audio, sr)
+        out_bytes, media_type = encode_audio(wav_bytes, req.response_format)
         return StreamingResponse(
-            io.BytesIO(wav_bytes),
-            media_type="audio/wav",
+            io.BytesIO(out_bytes),
+            media_type=media_type,
             headers={
                 "X-Audio-Duration": f"{duration:.2f}",
                 "X-Generation-Time": f"{gen_time:.2f}",
+                "X-Output-Format": req.response_format,
             },
         )
 
