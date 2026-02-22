@@ -2,7 +2,6 @@
 import base64
 import io
 import os
-import subprocess
 import tempfile
 import time
 import asyncio
@@ -170,36 +169,40 @@ def wav_to_bytes(wav_data: np.ndarray, sample_rate: int) -> bytes:
     return buf.read()
 
 
-# Supported output formats and their ffmpeg/media-type mappings
+# Supported output formats
 _FORMAT_MAP = {
-    "wav": {"ext": "wav", "media_type": "audio/wav", "ffmpeg_args": None},
-    "mp3": {"ext": "mp3", "media_type": "audio/mpeg", "ffmpeg_args": ["-c:a", "libmp3lame", "-q:a", "2"]},
-    "opus": {"ext": "opus", "media_type": "audio/ogg", "ffmpeg_args": ["-c:a", "libopus", "-b:a", "64k"]},
-    "ogg": {"ext": "ogg", "media_type": "audio/ogg", "ffmpeg_args": ["-c:a", "libopus", "-b:a", "64k"]},
-    "flac": {"ext": "flac", "media_type": "audio/flac", "ffmpeg_args": ["-c:a", "flac"]},
+    "wav": {"ext": "wav", "media_type": "audio/wav"},
+    "mp3": {"ext": "mp3", "media_type": "audio/mpeg"},
+    "opus": {"ext": "ogg", "media_type": "audio/ogg"},
+    "ogg": {"ext": "ogg", "media_type": "audio/ogg"},
+    "flac": {"ext": "flac", "media_type": "audio/flac"},
 }
 
 
 def encode_audio(wav_bytes: bytes, fmt: str) -> tuple[bytes, str]:
-    """Convert WAV bytes to the requested format. Returns (audio_bytes, media_type)."""
+    """Convert WAV bytes to the requested format via pydub. Returns (audio_bytes, media_type)."""
+    from pydub import AudioSegment
+
     fmt = fmt.lower()
     if fmt not in _FORMAT_MAP:
         raise ValueError(f"Unsupported format: {fmt}. Supported: {list(_FORMAT_MAP.keys())}")
 
     info = _FORMAT_MAP[fmt]
-    if info["ffmpeg_args"] is None:
+    if fmt == "wav":
         return wav_bytes, info["media_type"]
 
     try:
-        proc = subprocess.run(
-            ["ffmpeg", "-f", "wav", "-i", "pipe:0", *info["ffmpeg_args"], "-f", info["ext"], "pipe:1"],
-            input=wav_bytes, capture_output=True, timeout=30,
-        )
-        if proc.returncode != 0:
-            logger.error(f"ffmpeg failed: {proc.stderr.decode()[-500:]}")
-            # Fall back to WAV on conversion error
-            return wav_bytes, "audio/wav"
-        return proc.stdout, info["media_type"]
+        audio = AudioSegment.from_wav(io.BytesIO(wav_bytes))
+        out = io.BytesIO()
+        export_fmt = "ogg" if fmt in ("opus", "ogg") else fmt
+        export_params = []
+        if fmt in ("opus", "ogg"):
+            export_params = ["-c:a", "libopus", "-b:a", "96k"]
+        elif fmt == "mp3":
+            export_params = ["-q:a", "2"]
+        audio.export(out, format=export_fmt, parameters=export_params)
+        out.seek(0)
+        return out.read(), info["media_type"]
     except Exception as e:
         logger.error(f"Audio conversion error: {e}")
         return wav_bytes, "audio/wav"
