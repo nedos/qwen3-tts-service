@@ -33,6 +33,10 @@ WORKDIR /app
 RUN pip install --no-cache-dir --break-system-packages \
     torch torchaudio --index-url https://download.pytorch.org/whl/cu126
 
+# Install flash-attn (prebuilt wheel for cu126 + torch 2.8 + python 3.12)
+RUN pip install --no-cache-dir --break-system-packages \
+    flash-attn --find-links https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16
+
 # Install TTS dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
