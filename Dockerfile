@@ -17,7 +17,7 @@ WORKDIR /app
 
 # Install PyTorch with CUDA 12.6
 RUN pip install --no-cache-dir --break-system-packages \
-    torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+    torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
 
 # Install flash-attn (official prebuilt wheel from Dao-AILab)
 RUN pip install --no-cache-dir --break-system-packages \
